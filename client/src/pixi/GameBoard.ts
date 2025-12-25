@@ -1,5 +1,6 @@
 import * as PIXI from 'pixi.js';
-import { BoardSpace } from '@shared/types';
+import { BoardSpace, Player } from '@shared/types';
+import { PlayerPiece } from './PlayerPiece';
 
 export class GameBoard {
   private app: PIXI.Application;
@@ -7,6 +8,19 @@ export class GameBoard {
   private camera: PIXI.Container;
   private spaces: Map<number, PIXI.Graphics> = new Map();
   private boardData: BoardSpace[] = [];
+  private players: Map<string, PlayerPiece> = new Map();
+  
+  // Player colors
+  private playerColors = [
+    0x4a90e2, // Blue
+    0xe74c3c, // Red
+    0x2ecc71, // Green
+    0xf39c12, // Orange
+    0x9b59b6, // Purple
+    0x1abc9c, // Teal
+    0xe67e22, // Dark Orange
+    0x3498db, // Light Blue
+  ];
   
   // Camera settings
   private targetZoom = 1;
@@ -331,6 +345,60 @@ export class GameBoard {
   }
 
   /**
+   * Update players on the board
+   */
+  updatePlayers(players: Player[]) {
+    // Remove players that left
+    for (const [playerId, piece] of this.players.entries()) {
+      if (!players.find(p => p.id === playerId)) {
+        piece.destroy();
+        this.players.delete(playerId);
+      }
+    }
+
+    // Add or update players
+    players.forEach((player, index) => {
+      let piece = this.players.get(player.id);
+
+      if (!piece) {
+        // Create new player piece
+        const color = this.playerColors[index % this.playerColors.length];
+        piece = new PlayerPiece(player.id, player.name, color);
+        this.players.set(player.id, piece);
+        this.container.addChild(piece.getContainer());
+        
+        // Set initial position (by index, not position number)
+        if (player.position < this.boardData.length) {
+          const space = this.boardData[player.position];
+          if (space && space.x !== undefined && space.y !== undefined) {
+            piece.setPosition(space.x, space.y);
+          }
+        }
+      } else {
+        // Animate to new position (by index)
+        if (player.position < this.boardData.length) {
+          const space = this.boardData[player.position];
+          if (space && space.x !== undefined && space.y !== undefined) {
+            const currentPos = piece.getPosition();
+            
+            // Only animate if position actually changed
+            if (currentPos.x !== space.x || currentPos.y !== space.y) {
+              piece.moveTo(space.x, space.y, 500);
+            }
+          }
+        }
+      }
+    });
+  }
+
+  /**
+   * Get players map (for external access)
+   */
+  getPlayers(): Map<string, PlayerPiece> {
+    return this.players;
+  }
+
+  /**
    * Fit board to view (overview mode)
    */
   fitBoardToView() {
@@ -362,10 +430,12 @@ export class GameBoard {
   }
 
   /**
-   * Follow a specific space (player position)
+   * Follow a specific space (by index, not position number)
    */
-  followSpace(position: number, zoom: number = 1.5) {
-    const space = this.boardData.find(s => s.position === position);
+  followSpace(spaceIndex: number, zoom: number = 1.5) {
+    if (spaceIndex < 0 || spaceIndex >= this.boardData.length) return;
+    
+    const space = this.boardData[spaceIndex];
     if (!space || space.x === undefined || space.y === undefined) return;
     
     this.targetZoom = zoom;
@@ -431,6 +501,12 @@ export class GameBoard {
    * Destroy and cleanup
    */
   destroy() {
+    // Destroy all player pieces
+    for (const piece of this.players.values()) {
+      piece.destroy();
+    }
+    this.players.clear();
+    
     window.removeEventListener('resize', this.handleResize.bind(this));
     this.app.destroy(true, { children: true });
   }

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { useGameSocket } from '../../hooks/useGameSocket';
 import { Button } from '../ui/Button/Button';
+import { Dice } from './Dice';
 import styles from './GameScreen.module.css';
 import type { BoardSpace } from '@shared/types';
 
@@ -13,13 +14,13 @@ export function GameScreen() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameBoardRef = useRef<any>(null);
   const { room, currentPlayerId } = useGameStore();
-  const { leaveRoom } = useGameSocket();
+  const { leaveRoom, rollDice, lastDiceRoll } = useGameSocket();
   const [isOverview, setIsOverview] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [pixiLoaded, setPixiLoaded] = useState(false);
   const [boardData, setBoardData] = useState<BoardSpace[]>([]);
-  const [showBoardData, setShowBoardData] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
 
   const addLog = (msg: string) => {
     console.log(msg);
@@ -50,9 +51,14 @@ export function GameScreen() {
     });
   }, []);
 
-  // Initialize game board
+  // Initialize game board (only once)
   useEffect(() => {
     if (!pixiLoaded || !canvasRef.current || !room || !GameBoard || !BoardGenerator) {
+      return;
+    }
+
+    // Only initialize if we don't have a board yet
+    if (gameBoardRef.current) {
       return;
     }
 
@@ -76,6 +82,13 @@ export function GameScreen() {
       gameBoard.generateBoard(boardSpaces);
       addLog('Board rendered successfully!');
 
+      // Render players
+      if (room.players) {
+        addLog('Rendering players...');
+        gameBoard.updatePlayers(room.players);
+        addLog('Players rendered!');
+      }
+
     } catch (err: any) {
       addLog(`ERROR: ${err.message}`);
       setError(err.message);
@@ -91,7 +104,25 @@ export function GameScreen() {
         gameBoardRef.current = null;
       }
     };
-  }, [pixiLoaded, room]);
+  }, [pixiLoaded]);
+
+  // Update players when room changes
+  useEffect(() => {
+    if (gameBoardRef.current && room?.players) {
+      addLog(`Updating ${room.players.length} player(s)...`);
+      gameBoardRef.current.updatePlayers(room.players);
+      
+      // Follow current player if in follow mode
+      if (!isOverview && currentPlayerId) {
+        const currentPlayer = room.players.find(p => p.id === currentPlayerId);
+        if (currentPlayer) {
+          setTimeout(() => {
+            gameBoardRef.current.followSpace(currentPlayer.position);
+          }, 300);
+        }
+      }
+    }
+  }, [room?.players, isOverview, currentPlayerId]);
 
   const handleToggleOverview = () => {
     if (gameBoardRef.current) {
@@ -151,9 +182,9 @@ export function GameScreen() {
             <Button
               variant="secondary"
               size="small"
-              onClick={() => setShowBoardData(!showBoardData)}
+              onClick={() => setShowDebug(!showDebug)}
             >
-              {showBoardData ? '📊 Hide Data' : '📊 Board Data'}
+              {showDebug ? '🐛 Hide Debug' : '🐛 Debug View'}
             </Button>
             
             <Button
@@ -182,16 +213,18 @@ export function GameScreen() {
             <p>Time: {room.settings.turnTimer}s</p>
           </div>
           
-          <Button variant="primary" size="large" disabled>
-            🎲 Roll Dice
-          </Button>
+          <Dice
+            onRollClick={rollDice}
+            disabled={false}
+            lastRoll={lastDiceRoll || undefined}
+          />
         </div>
 
-        {/* Board Data Panel */}
-        {showBoardData && (
+        {/* Unified Debug Panel - Right Side */}
+        {showDebug && (
           <div style={{
             position: 'absolute',
-            left: '1rem',
+            right: '1rem',
             top: '50%',
             transform: 'translateY(-50%)',
             background: 'rgba(0,0,0,0.9)',
@@ -199,32 +232,78 @@ export function GameScreen() {
             borderRadius: '0.5rem',
             maxHeight: '80vh',
             overflowY: 'auto',
-            width: '400px',
+            width: '450px',
             fontSize: '0.75rem',
             fontFamily: 'monospace',
-            pointerEvents: 'auto'
+            pointerEvents: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1rem'
           }}>
-            <div style={{ fontWeight: 'bold', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
-              Board Structure ({boardData.length} spaces)
+            {/* Log Section */}
+            <div>
+              <div style={{ 
+                fontWeight: 'bold', 
+                marginBottom: '0.5rem', 
+                fontSize: '0.9rem',
+                borderBottom: '1px solid rgba(255,255,255,0.2)',
+                paddingBottom: '0.25rem'
+              }}>
+                Event Log
+              </div>
+              <div style={{ 
+                maxHeight: '150px', 
+                overflowY: 'auto',
+                background: 'rgba(0,0,0,0.3)',
+                padding: '0.5rem',
+                borderRadius: '0.25rem'
+              }}>
+                {debugLog.slice(-10).map((log, i) => (
+                  <div key={i} style={{ marginBottom: '0.25rem' }}>{log}</div>
+                ))}
+              </div>
             </div>
-            {boardData.map((space, idx) => {
-              const branchInfo = space.branchId 
-                ? ` [ID:${space.branchId}, idx:${space.branchIndex}]` 
-                : '';
-              const branchCount = space.branchCount ? ` (${space.branchCount} paths)` : '';
-              
-              return (
-                <div 
-                  key={idx} 
-                  style={{ 
-                    padding: '0.25rem',
-                    background: space.type.includes('branch') ? 'rgba(255,0,0,0.2)' : 'transparent'
-                  }}
-                >
-                  {idx}: pos={space.position}, type={space.type}{branchInfo}{branchCount}
-                </div>
-              );
-            })}
+
+            {/* Board Structure Section */}
+            <div>
+              <div style={{ 
+                fontWeight: 'bold', 
+                marginBottom: '0.5rem', 
+                fontSize: '0.9rem',
+                borderBottom: '1px solid rgba(255,255,255,0.2)',
+                paddingBottom: '0.25rem'
+              }}>
+                Board Structure ({boardData.length} spaces)
+              </div>
+              <div style={{ 
+                maxHeight: '400px', 
+                overflowY: 'auto',
+                background: 'rgba(0,0,0,0.3)',
+                padding: '0.5rem',
+                borderRadius: '0.25rem'
+              }}>
+                {boardData.map((space, idx) => {
+                  const branchInfo = space.branchId 
+                    ? ` [ID:${space.branchId}, idx:${space.branchIndex}]` 
+                    : '';
+                  const branchCount = space.branchCount ? ` (${space.branchCount} paths)` : '';
+                  
+                  return (
+                    <div 
+                      key={idx} 
+                      style={{ 
+                        padding: '0.25rem',
+                        marginBottom: '0.125rem',
+                        background: space.type.includes('branch') ? 'rgba(255,100,100,0.2)' : 'transparent',
+                        borderRadius: '0.125rem'
+                      }}
+                    >
+                      {idx}: pos={space.position}, type={space.type}{branchInfo}{branchCount}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
       </div>

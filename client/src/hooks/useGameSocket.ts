@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { socketService } from '../services/socket';
 import { useGameStore } from '../store/gameStore';
 import { GameSettings } from '@shared/types';
@@ -12,6 +12,8 @@ export function useGameSocket() {
     setPlaying,
     room 
   } = useGameStore();
+
+  const [lastDiceRoll, setLastDiceRoll] = useState<number | null>(null);
 
   useEffect(() => {
     const socket = socketService.connect();
@@ -70,6 +72,22 @@ export function useGameSocket() {
       setPlaying(true);
     });
 
+    // Dice rolled
+    socket.on('dice-rolled', ({ playerId, roll, room: updatedRoom }) => {
+      console.log(`Player ${playerId} rolled ${roll}`);
+      setLastDiceRoll(roll); // Store the roll for animation
+      setRoom(updatedRoom);
+      
+      // Clear it after animation completes
+      setTimeout(() => setLastDiceRoll(null), 2000);
+    });
+
+    // Player moved
+    socket.on('player-moved', ({ playerId, newPosition, room: updatedRoom }) => {
+      console.log(`Player ${playerId} moved to position ${newPosition}`);
+      setRoom(updatedRoom);
+    });
+
     // Errors
     socket.on('error', ({ message }) => {
       console.error('Server error:', message);
@@ -85,14 +103,14 @@ export function useGameSocket() {
   const createRoom = (playerName: string, instanceId: string) => {
     const socket = socketService.getSocket();
     if (socket) {
-      socket.emit('create-room', { playerName, instanceId });
+      socket.emit('create-room', { playerName, instanceId, discordUser: null });
     }
   };
 
   const joinRoom = (instanceId: string, playerName: string) => {
     const socket = socketService.getSocket();
     if (socket) {
-      socket.emit('join-room', { instanceId, playerName });
+      socket.emit('join-room', { instanceId, playerName, discordUser: null });
     }
   };
 
@@ -124,6 +142,13 @@ export function useGameSocket() {
     }
   };
 
+  const rollDice = () => {
+    const socket = socketService.getSocket();
+    if (socket && room) {
+      socket.emit('roll-dice', { instanceId: room.id });
+    }
+  };
+
   const leaveRoom = () => {
     const socket = socketService.getSocket();
     if (socket && room) {
@@ -142,6 +167,8 @@ export function useGameSocket() {
     toggleAFK,
     startGame,
     leaveRoom,
+    rollDice,
+    lastDiceRoll,
     isConnected: socketService.isConnected()
   };
 }

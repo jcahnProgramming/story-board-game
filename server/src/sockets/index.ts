@@ -8,8 +8,8 @@ export function initializeSocketHandlers(io: Server) {
     console.log(`✅ Player connected: ${socket.id}`);
 
     // Create room (host)
-    socket.on('create-room', (data: { playerName: string; instanceId: string }) => {
-      const { playerName, instanceId } = data;
+    socket.on('create-room', (data: { playerName: string; instanceId: string; discordUser?: any }) => {
+      const { playerName, instanceId, discordUser } = data;
       
       // Check if room already exists for this instance
       let room = rooms.get(instanceId);
@@ -23,21 +23,24 @@ export function initializeSocketHandlers(io: Server) {
             id: socket.id,
             name: playerName,
             isHost: true,
-            isReady: true, // Host is always ready
+            isReady: true,
             isAFK: false,
             position: 0,
-            score: 0
+            score: 0,
+            discordId: discordUser?.id,
+            discordAvatar: discordUser?.avatar,
+            discordDiscriminator: discordUser?.discriminator
           }],
           settings: {
-  boardLength: 20,
-  turnTimer: 60,
-  maxPlayers: 8,
-  votingEnabled: true,
-  selectedStoryPack: 'family-friendly',
-  maxBranchPaths: 3,
-  branchSelectionMode: 'player-choice',
-  randomizationLevel: 'medium'
-},
+            boardLength: 20,
+            turnTimer: 60,
+            maxPlayers: 8,
+            votingEnabled: true,
+            selectedStoryPack: 'family-friendly',
+            maxBranchPaths: 3,
+            branchSelectionMode: 'player-choice',
+            randomizationLevel: 'medium'
+          },
           status: 'waiting',
           story: []
         };
@@ -55,7 +58,10 @@ export function initializeSocketHandlers(io: Server) {
           isReady: false,
           isAFK: false,
           position: 0,
-          score: 0
+          score: 0,
+          discordId: discordUser?.id,
+          discordAvatar: discordUser?.avatar,
+          discordDiscriminator: discordUser?.discriminator
         };
         
         room.players.push(player);
@@ -66,8 +72,8 @@ export function initializeSocketHandlers(io: Server) {
     });
 
     // Join room (player)
-    socket.on('join-room', (data: { instanceId: string; playerName: string }) => {
-      const { instanceId, playerName } = data;
+    socket.on('join-room', (data: { instanceId: string; playerName: string; discordUser?: any }) => {
+      const { instanceId, playerName, discordUser } = data;
       const room = rooms.get(instanceId);
       
       if (!room) {
@@ -92,7 +98,10 @@ export function initializeSocketHandlers(io: Server) {
         isReady: false,
         isAFK: false,
         position: 0,
-        score: 0
+        score: 0,
+        discordId: discordUser?.id,
+        discordAvatar: discordUser?.avatar,
+        discordDiscriminator: discordUser?.discriminator
       };
 
       room.players.push(player);
@@ -155,29 +164,58 @@ export function initializeSocketHandlers(io: Server) {
     });
 
     // Start game (host only)
-socket.on('start-game', (data: { instanceId: string; allowSolo?: boolean }) => {
-  const { instanceId, allowSolo } = data;
-  const room = rooms.get(instanceId);
-  
-  if (!room || room.host !== socket.id) return;
+    socket.on('start-game', (data: { instanceId: string; allowSolo?: boolean }) => {
+      const { instanceId, allowSolo } = data;
+      const room = rooms.get(instanceId);
+      
+      if (!room || room.host !== socket.id) return;
 
-  const activePlayers = room.players.filter(p => !p.isAFK);
-  
-  // Check player count
-  if (activePlayers.length < 3 && !allowSolo) {
-    socket.emit('error', { message: 'Need at least 3 active players or enable solo play' });
-    return;
-  }
+      const activePlayers = room.players.filter(p => !p.isAFK);
+      
+      // Check player count
+      if (activePlayers.length < 3 && !allowSolo) {
+        socket.emit('error', { message: 'Need at least 3 active players or enable solo play' });
+        return;
+      }
 
-  // If solo play, disable voting
-  if (activePlayers.length === 1) {
-    room.settings.votingEnabled = false;
-  }
+      // If solo play, disable voting
+      if (activePlayers.length === 1) {
+        room.settings.votingEnabled = false;
+      }
 
-  room.status = 'playing';
-  io.to(instanceId).emit('game-started', { room, roles: new Map() });
-  console.log(`🎮 Game started in room ${instanceId} (${activePlayers.length} players, solo: ${activePlayers.length === 1})`);
-});
+      room.status = 'playing';
+      io.to(instanceId).emit('game-started', { room, roles: new Map() });
+      console.log(`🎮 Game started in room ${instanceId} (${activePlayers.length} players, solo: ${activePlayers.length === 1})`);
+    });
+
+    // Roll dice
+    socket.on('roll-dice', (data: { instanceId: string }) => {
+      const { instanceId } = data;
+      const room = rooms.get(instanceId);
+      
+      if (!room || room.status !== 'playing') return;
+
+      const player = room.players.find(p => p.id === socket.id);
+      if (!player) return;
+
+      // TODO: Check if it's player's turn (for now, anyone can roll)
+      
+      // Roll dice (1-6)
+      const roll = Math.floor(Math.random() * 6) + 1;
+      
+      // Simply add the roll to current position
+      // The client will handle the actual board layout
+      const newPosition = player.position + roll;
+      player.position = newPosition;
+
+      // Emit dice roll result
+      io.to(instanceId).emit('dice-rolled', { playerId: player.id, roll, room });
+      
+      // Emit player moved
+      io.to(instanceId).emit('player-moved', { playerId: player.id, newPosition, room });
+      
+      console.log(`🎲 ${player.name} rolled ${roll}, moved from ${player.position - roll} to position ${newPosition}`);
+    });
 
     // Leave room
     socket.on('leave-room', (data: { instanceId: string }) => {

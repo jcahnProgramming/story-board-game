@@ -6,8 +6,12 @@ export interface Player {
   isReady: boolean;
   isAFK: boolean;
   position: number;
-  role?: PlayerRole;
   score: number;
+  
+  // Discord info
+  discordId?: string;
+  discordAvatar?: string;
+  discordDiscriminator?: string;
 }
 
 export type PlayerRole = 
@@ -134,17 +138,14 @@ export interface PromptCard {
 
 // Socket Event Types
 export interface ClientToServerEvents {
-  'create-room': (data: { playerName: string; instanceId: string }) => void;
-  'join-room': (data: { instanceId: string; playerName: string }) => void;
-  'leave-room': (data: { instanceId: string }) => void;
+  'create-room': (data: { playerName: string; instanceId: string; discordUser?: any }) => void;
+  'join-room': (data: { instanceId: string; playerName: string; discordUser?: any }) => void;
   'update-settings': (data: { instanceId: string; settings: Partial<GameSettings> }) => void;
   'toggle-ready': (data: { instanceId: string }) => void;
   'toggle-afk': (data: { instanceId: string }) => void;
-  'start-game': (data: { instanceId: string; allowSolo?: boolean }) => void;  // <-- Updated this line
-  'roll-dice': (data: { instanceId: string }) => void;
-  'submit-answer': (data: { instanceId: string; answer: string }) => void;
-  'vote-contribution': (data: { instanceId: string; contributionIndex: number }) => void;
-  'guess-role': (data: { instanceId: string; playerId: string; guessedRole: PlayerRole }) => void;
+  'start-game': (data: { instanceId: string; allowSolo?: boolean }) => void;
+  'leave-room': (data: { instanceId: string }) => void;
+  'roll-dice': (data: { instanceId: string }) => void; // NEW
 }
 
 export interface ServerToClientEvents {
@@ -154,14 +155,10 @@ export interface ServerToClientEvents {
   'settings-updated': (data: { room: GameRoom }) => void;
   'player-ready-changed': (data: { room: GameRoom }) => void;
   'player-afk-changed': (data: { room: GameRoom }) => void;
-  'game-started': (data: { room: GameRoom; roles: Map<string, PlayerRole> }) => void;
-  'dice-rolled': (data: { playerId: string; roll: number; newPosition: number }) => void;
-  'prompt-drawn': (data: { prompt: PromptCard }) => void;
-  'answer-submitted': (data: { contribution: StoryContribution }) => void;
-  'turn-changed': (data: { playerId: string }) => void;
-  'voting-phase': (data: { story: StoryContribution[] }) => void;
-  'game-ended': (data: { winner: Player; finalStory: StoryContribution[]; roles: Map<string, PlayerRole> }) => void;
+  'game-started': (data: { room: GameRoom; roles: Map<string, string> }) => void;
   'error': (data: { message: string }) => void;
+  'dice-rolled': (data: { playerId: string; roll: number; room: GameRoom }) => void; // NEW
+  'player-moved': (data: { playerId: string; newPosition: number; room: GameRoom }) => void; // NEW
 }
 
 // Story Pack Types (for shop/customization)

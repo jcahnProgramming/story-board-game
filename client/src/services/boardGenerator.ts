@@ -15,8 +15,9 @@ export class BoardGenerator {
     const spaces: BoardSpace[] = [];
     this.spaceCounter = 0;
 
+    // TEMPORARILY DISABLE BRANCHES FOR TESTING
     // Calculate number of splits based on board length
-    const numSplits = this.calculateSplitCount();
+    const numSplits = 0; // this.calculateSplitCount();
     const splitPositions = this.calculateSplitPositions(numSplits);
 
     let nextSplitIndex = 0;

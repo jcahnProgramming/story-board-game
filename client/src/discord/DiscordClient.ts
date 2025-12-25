@@ -1,91 +1,88 @@
-import { DiscordSDK, Events } from '@discord/embedded-app-sdk';
+import { DiscordSDK } from '@discord/embedded-app-sdk';
 
-class DiscordClientSingleton {
-  private sdk: DiscordSDK | null = null;
-  private initialized = false;
+export class DiscordClient {
+  private static discordSdk: DiscordSDK | null = null;
+  private static instanceId: string | null = null;
 
-  async initialize(): Promise<DiscordSDK> {
-    if (this.sdk) return this.sdk;
-
-    const clientId = import.meta.env.VITE_DISCORD_CLIENT_ID;
-    
-    if (!clientId) {
-      throw new Error('VITE_DISCORD_CLIENT_ID not found in environment variables');
+  /**
+   * Initialize the Discord SDK
+   */
+  static async initialize(): Promise<void> {
+    if (this.discordSdk) {
+      return; // Already initialized
     }
 
-    this.sdk = new DiscordSDK(clientId);
+    this.discordSdk = new DiscordSDK(import.meta.env.VITE_DISCORD_CLIENT_ID);
 
-    await this.sdk.ready();
-    
-    // Authorize with Discord
-    const { code } = await this.sdk.commands.authorize({
-      client_id: clientId,
-      response_type: 'code',
-      state: '',
-      prompt: 'none',
-      scope: [
-        'identify',
-        'guilds',
-      ],
-    });
-
-    // Exchange code for access token (you'll need to implement backend endpoint)
-    // For now, we'll store the code
-    console.log('Discord authorization code:', code);
-
-    this.initialized = true;
-    return this.sdk;
-  }
-
-  getSDK(): DiscordSDK | null {
-    return this.sdk;
-  }
-
-  isInitialized(): boolean {
-    return this.initialized;
-  }
-
-  // Get current instance (session) ID
-  getInstanceId(): string | null {
-    return this.sdk?.instanceId || null;
-  }
-
-  // Get current channel ID
-  getChannelId(): string | null {
-    return this.sdk?.channelId || null;
-  }
-
-  // Get current guild (server) ID
-  getGuildId(): string | null {
-    return this.sdk?.guildId || null;
-  }
-
-  // Get participant info
-  async getParticipants() {
-    if (!this.sdk) return [];
-    
     try {
-      const participants = await this.sdk.commands.getInstanceConnectedParticipants();
-      return participants.participants;
+      await this.discordSdk.ready();
+      console.log('✅ Discord SDK ready');
+
+      // Get instance ID (session ID)
+      this.instanceId = this.discordSdk.instanceId;
+      console.log('Instance ID:', this.instanceId);
+
+      // Authorize the user
+      await this.discordSdk.commands.authorize({
+        client_id: import.meta.env.VITE_DISCORD_CLIENT_ID,
+        response_type: 'code',
+        state: '',
+        prompt: 'none',
+        scope: ['identify', 'guilds'],
+      });
+
+      console.log('✅ User authorized');
+    } catch (error) {
+      console.error('Failed to initialize Discord SDK:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get the Discord SDK instance
+   */
+  static getSDK(): DiscordSDK | null {
+    return this.discordSdk;
+  }
+
+  /**
+   * Get the current instance ID (session ID)
+   */
+  static getInstanceId(): string {
+    return this.instanceId || '';
+  }
+
+  /**
+   * Get voice channel participants
+   */
+  static async getParticipants() {
+    if (!this.discordSdk) {
+      throw new Error('Discord SDK not initialized');
+    }
+
+    try {
+      const channel = await this.discordSdk.commands.getChannel({
+        channel_id: this.discordSdk.channelId!,
+      });
+
+      return channel?.voice_states || [];
     } catch (error) {
       console.error('Failed to get participants:', error);
       return [];
     }
   }
 
-  // Subscribe to participant updates
-  onParticipantUpdate(callback: (participants: any[]) => void) {
-    if (!this.sdk) return () => {};
+  /**
+   * Subscribe to participant updates
+   */
+  static onParticipantUpdate(callback: (participants: any[]) => void) {
+    if (!this.discordSdk) {
+      throw new Error('Discord SDK not initialized');
+    }
 
-    const unsubscribe = this.sdk.subscribe(
-      Events.ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE,
-      (data: any) => {
-        callback(data.participants);
-      }
-    );
-
-    return unsubscribe;
+    this.discordSdk.subscribe('VOICE_STATE_UPDATE', async () => {
+      const participants = await this.getParticipants();
+      callback(participants);
+    });
   }
 }
-
-export const DiscordClient = new DiscordClientSingleton();
