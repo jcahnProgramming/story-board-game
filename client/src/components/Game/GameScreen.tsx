@@ -1,0 +1,233 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { useGameStore } from '../../store/gameStore';
+import { useGameSocket } from '../../hooks/useGameSocket';
+import { Button } from '../ui/Button/Button';
+import styles from './GameScreen.module.css';
+import type { BoardSpace } from '@shared/types';
+
+// Lazy load PixiJS components to catch import errors
+let GameBoard: any = null;
+let BoardGenerator: any = null;
+
+export function GameScreen() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const gameBoardRef = useRef<any>(null);
+  const { room, currentPlayerId } = useGameStore();
+  const { leaveRoom } = useGameSocket();
+  const [isOverview, setIsOverview] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const [pixiLoaded, setPixiLoaded] = useState(false);
+  const [boardData, setBoardData] = useState<BoardSpace[]>([]);
+  const [showBoardData, setShowBoardData] = useState(false);
+
+  const addLog = (msg: string) => {
+    console.log(msg);
+    setDebugLog(prev => [...prev, `${new Date().toLocaleTimeString()}: ${msg}`]);
+  };
+
+  // Load PixiJS components
+  useEffect(() => {
+    addLog('Loading PixiJS components...');
+    
+    Promise.all([
+      import('../../pixi/GameBoard').then(module => {
+        GameBoard = module.GameBoard;
+        addLog('GameBoard class loaded');
+      }),
+      import('../../services/boardGenerator').then(module => {
+        BoardGenerator = module.BoardGenerator;
+        addLog('BoardGenerator class loaded');
+      })
+    ])
+    .then(() => {
+      addLog('All PixiJS components loaded successfully');
+      setPixiLoaded(true);
+    })
+    .catch(err => {
+      addLog(`Failed to load PixiJS: ${err.message}`);
+      setError(`Failed to load game components: ${err.message}`);
+    });
+  }, []);
+
+  // Initialize game board
+  useEffect(() => {
+    if (!pixiLoaded || !canvasRef.current || !room || !GameBoard || !BoardGenerator) {
+      return;
+    }
+
+    addLog('Initializing game board...');
+
+    try {
+      addLog('Creating GameBoard instance...');
+      const gameBoard = new GameBoard(canvasRef.current);
+      gameBoardRef.current = gameBoard;
+      addLog('GameBoard created successfully');
+
+      addLog('Generating board data...');
+      const generator = new BoardGenerator(room.settings);
+      const boardSpaces = generator.generateBoard();
+      addLog(`Board generated: ${boardSpaces.length} spaces`);
+      
+      // Store board data for display
+      setBoardData(boardSpaces);
+
+      addLog('Rendering board...');
+      gameBoard.generateBoard(boardSpaces);
+      addLog('Board rendered successfully!');
+
+    } catch (err: any) {
+      addLog(`ERROR: ${err.message}`);
+      setError(err.message);
+    }
+
+    return () => {
+      if (gameBoardRef.current) {
+        try {
+          gameBoardRef.current.destroy();
+        } catch (err) {
+          console.error('Cleanup error:', err);
+        }
+        gameBoardRef.current = null;
+      }
+    };
+  }, [pixiLoaded, room]);
+
+  const handleToggleOverview = () => {
+    if (gameBoardRef.current) {
+      gameBoardRef.current.toggleOverview();
+      setIsOverview(!isOverview);
+    }
+  };
+
+  if (!room || !currentPlayerId) {
+    return (
+      <div style={{ 
+        padding: '2rem', 
+        color: 'white', 
+        background: '#1a1a2e',
+        minHeight: '100vh'
+      }}>
+        <h1>Loading game...</h1>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ 
+        padding: '2rem', 
+        color: 'white', 
+        background: '#1a1a2e',
+        minHeight: '100vh'
+      }}>
+        <h1>Error loading game</h1>
+        <pre style={{ 
+          background: 'rgba(255,0,0,0.2)', 
+          padding: '1rem', 
+          borderRadius: '0.5rem'
+        }}>
+          {error}
+        </pre>
+        <Button onClick={leaveRoom}>Back to Lobby</Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.gameScreen}>
+      <canvas ref={canvasRef} className={styles.canvas} />
+      
+      {/* UI Overlay */}
+      <div className={styles.uiOverlay}>
+        {/* Top Bar */}
+        <div className={styles.topBar}>
+          <div className={styles.gameInfo}>
+            <h2>{room.settings.selectedStoryPack}</h2>
+            <p>Players: {room.players.length}</p>
+          </div>
+          
+          <div className={styles.controls}>
+            <Button
+              variant="secondary"
+              size="small"
+              onClick={() => setShowBoardData(!showBoardData)}
+            >
+              {showBoardData ? '📊 Hide Data' : '📊 Board Data'}
+            </Button>
+            
+            <Button
+              variant="secondary"
+              size="small"
+              onClick={handleToggleOverview}
+              disabled={!pixiLoaded}
+            >
+              {isOverview ? '🔍 Follow' : '🗺️ Overview'}
+            </Button>
+            
+            <Button
+              variant="danger"
+              size="small"
+              onClick={leaveRoom}
+            >
+              Leave Game
+            </Button>
+          </div>
+        </div>
+
+        {/* Bottom Bar */}
+        <div className={styles.bottomBar}>
+          <div className={styles.turnInfo}>
+            <p>Turn: {room.players[0]?.name || 'Unknown'}</p>
+            <p>Time: {room.settings.turnTimer}s</p>
+          </div>
+          
+          <Button variant="primary" size="large" disabled>
+            🎲 Roll Dice
+          </Button>
+        </div>
+
+        {/* Board Data Panel */}
+        {showBoardData && (
+          <div style={{
+            position: 'absolute',
+            left: '1rem',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            background: 'rgba(0,0,0,0.9)',
+            padding: '1rem',
+            borderRadius: '0.5rem',
+            maxHeight: '80vh',
+            overflowY: 'auto',
+            width: '400px',
+            fontSize: '0.75rem',
+            fontFamily: 'monospace',
+            pointerEvents: 'auto'
+          }}>
+            <div style={{ fontWeight: 'bold', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+              Board Structure ({boardData.length} spaces)
+            </div>
+            {boardData.map((space, idx) => {
+              const branchInfo = space.branchId 
+                ? ` [ID:${space.branchId}, idx:${space.branchIndex}]` 
+                : '';
+              const branchCount = space.branchCount ? ` (${space.branchCount} paths)` : '';
+              
+              return (
+                <div 
+                  key={idx} 
+                  style={{ 
+                    padding: '0.25rem',
+                    background: space.type.includes('branch') ? 'rgba(255,0,0,0.2)' : 'transparent'
+                  }}
+                >
+                  {idx}: pos={space.position}, type={space.type}{branchInfo}{branchCount}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

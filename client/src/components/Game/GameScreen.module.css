@@ -1,0 +1,84 @@
+.gameScreen {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.uiOverlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1rem;
+}
+
+.uiOverlay > * {
+  pointer-events: auto;
+}
+
+.topBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.gameInfo {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px);
+  padding: 1rem 1.5rem;
+  border-radius: 1rem;
+  color: white;
+}
+
+.gameInfo h2 {
+  font-size: 1.25rem;
+  margin: 0 0 0.25rem 0;
+  text-transform: capitalize;
+}
+
+.gameInfo p {
+  margin: 0;
+  opacity: 0.8;
+  font-size: 0.9rem;
+}
+
+.controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.bottomBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px);
+  padding: 1rem 1.5rem;
+  border-radius: 1rem;
+}
+
+.turnInfo {
+  color: white;
+}
+
+.turnInfo p {
+  margin: 0.25rem 0;
+  font-size: 1rem;
+}
+
+.turnInfo p:first-child {
+  font-weight: 600;
+  font-size: 1.1rem;
+}
