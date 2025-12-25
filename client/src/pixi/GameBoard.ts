@@ -28,6 +28,7 @@ export class GameBoard {
   private targetY = 0;
   private currentZoom = 1;
   private isOverviewMode = false;
+  private isAnimating = false; // Flag to disable auto-lerp during manual animations
 
   constructor(canvas: HTMLCanvasElement) {
     // Initialize PixiJS application
@@ -383,7 +384,7 @@ export class GameBoard {
             
             // Only animate if position actually changed
             if (currentPos.x !== space.x || currentPos.y !== space.y) {
-              piece.moveTo(space.x, space.y, 500);
+              piece.moveTo(space.x, space.y, 800); // Slower player movement (was 500ms)
             }
           }
         }
@@ -430,18 +431,112 @@ export class GameBoard {
   }
 
   /**
-   * Follow a specific space (by index, not position number)
+   * Follow a specific space (by index, not position number) with zoom animation
    */
-  followSpace(spaceIndex: number, zoom: number = 1.5) {
+  followSpace(spaceIndex: number, finalZoom: number = 1.5) {
     if (spaceIndex < 0 || spaceIndex >= this.boardData.length) return;
     
     const space = this.boardData[spaceIndex];
     if (!space || space.x === undefined || space.y === undefined) return;
     
-    this.targetZoom = zoom;
-    this.targetX = -space.x * zoom;
-    this.targetY = -space.y * zoom;
     this.isOverviewMode = false;
+    
+    // Three-phase animation: zoom out -> pan -> zoom in
+    this.animateToSpace(space.x, space.y, finalZoom);
+  }
+
+  /**
+   * Animate camera to a space with zoom out/in effect
+   */
+  private animateToSpace(targetX: number, targetY: number, finalZoom: number) {
+    this.isAnimating = true;
+    
+    // Phase 1: Zoom out (slower and smoother)
+    const zoomOutLevel = 0.7; // Zoom out more (was 0.8)
+    const currentPos = {
+      x: -this.container.position.x / this.currentZoom,
+      y: -this.container.position.y / this.currentZoom
+    };
+    
+    // Animate zoom out (slower)
+    this.animateCamera(
+      currentPos.x,
+      currentPos.y,
+      zoomOutLevel,
+      500, // Slower (was 300ms)
+      () => {
+        // Phase 2: Pan to new location (while zoomed out, slower)
+        this.animateCamera(
+          targetX,
+          targetY,
+          zoomOutLevel,
+          700, // Slower (was 400ms)
+          () => {
+            // Phase 3: Zoom back in (slower)
+            this.animateCamera(
+              targetX,
+              targetY,
+              finalZoom,
+              500, // Slower (was 300ms)
+              () => {
+                this.isAnimating = false; // Re-enable auto-lerp
+              }
+            );
+          }
+        );
+      }
+    );
+  }
+
+  /**
+   * Animate camera to target position and zoom with callback
+   */
+  private animateCamera(
+    targetX: number,
+    targetY: number,
+    targetZoom: number,
+    duration: number,
+    onComplete?: () => void
+  ) {
+    const startTime = Date.now();
+    const startZoom = this.currentZoom;
+    const startX = -this.container.position.x / this.currentZoom;
+    const startY = -this.container.position.y / this.currentZoom;
+    
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Smoother easing function (cubic ease-in-out for more fluid motion)
+      const eased = progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+      
+      // Update zoom
+      this.currentZoom = startZoom + (targetZoom - startZoom) * eased;
+      this.container.scale.set(this.currentZoom);
+      
+      // Update position
+      const currentX = startX + (targetX - startX) * eased;
+      const currentY = startY + (targetY - startY) * eased;
+      this.container.position.x = -currentX * this.currentZoom;
+      this.container.position.y = -currentY * this.currentZoom;
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        // Update target values for the main update loop
+        this.targetZoom = targetZoom;
+        this.targetX = -targetX * targetZoom;
+        this.targetY = -targetY * targetZoom;
+        
+        if (onComplete) {
+          onComplete();
+        }
+      }
+    };
+    
+    animate();
   }
 
   /**
@@ -464,7 +559,10 @@ export class GameBoard {
    * Update loop (smooth camera movement)
    */
   private update() {
-    // Smooth camera interpolation
+    // Skip auto-lerp if we're in a manual animation
+    if (this.isAnimating) return;
+    
+    // Smooth camera interpolation for user interactions
     const lerp = 0.1;
     
     this.currentZoom += (this.targetZoom - this.currentZoom) * lerp;
